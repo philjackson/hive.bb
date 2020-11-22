@@ -6,6 +6,8 @@
 (import 'java.time.format.DateTimeFormatter
         'java.time.ZonedDateTime)
 
+(def beekeeper-base "https://beekeeper.hivehome.com")
+
 (defn extract-config [data]
   (select-keys data [:token :accessToken :refreshToken]))
 
@@ -28,7 +30,7 @@
 (defn hive-refresh-token [config]
   (println "Refreshing token.")
   (hive-post config
-             "https://beekeeper-uk.hivehome.com/1.0/cognito/refresh-token"
+             (str beekeeper-base "/1.0/cognito/refresh-token")
              {:body (json/generate-string config)}))
 
 (defn hive-call [method config url options]
@@ -61,6 +63,13 @@
 (def hive-get (partial hive-call curl/get))
 (def hive-post (partial hive-call curl/post))
 
+(defn product-url [product]
+  (str beekeeper-base
+       "/1.0/nodes/"
+       (:type product)
+       "/"
+       (:id product)))
+
 (defn authenticate [config args]
   (let [{:keys [options summary errors]}
         (tools.cli/parse-opts
@@ -71,7 +80,7 @@
     (if (not (seq errors))
       (do
         (-> (hive-post config
-                       "https://beekeeper.hivehome.com/1.0/cognito/login"
+                       (str beekeeper-base "/1.0/cognito/login")
                        {:body (json/generate-string (select-keys options [:username :password]))})
             extract-config
             write-config)
@@ -83,7 +92,7 @@
 
 (defn products [config args]
   (->> (hive-get config
-                 "https://beekeeper-uk.hivehome.com/1.0/auth/admin-login"
+                 (str beekeeper-base "/1.0/auth/admin-login")
                  {:auth? false
                   :body (json/generate-string {:token (:token config)
                                                :products true})})
@@ -98,10 +107,7 @@
         lamp (get prods "study lamp")
         brightness (get-in lamp [:state :brightness])]
     (hive-post config
-               (str "https://beekeeper-uk.hivehome.com/1.0/nodes/"
-                    (:type lamp)
-                    "/"
-                    (:id lamp))
+               (product-url lamp)
                {:auth? true
                 :body (json/generate-string {:brightness (+ brightness amount)})})))
 
@@ -109,16 +115,13 @@
   (let [prods (products config [])
         lamp (get prods "study lamp")]
     (hive-post config
-               (str "https://beekeeper-uk.hivehome.com/1.0/nodes/"
-                    (:type lamp)
-                    "/"
-                    (:id lamp))
+               (product-url lamp)
                {:auth? true
                 :body (json/generate-string (if status
                                               {:status "ON"}
                                               {:status "OFF"}))})))
 
-(defn lamp-toggle [config]
+(defn lamp-toggle [config args]
   (let [prods (products config [])
         lamp (get prods "study lamp")
         status (get-in lamp [:state :status])]
@@ -126,6 +129,8 @@
 
 (def cli-options
   [["-v" nil "Verbosity level" :default 0 :update-fn inc]])
+
+#_(def *command-line-args* ["lamp-toggle"])
 
 (let [options (tools.cli/parse-opts *command-line-args* cli-options :in-order true)
       config (if (.exists (io/file config-filename))
@@ -135,7 +140,7 @@
     "authenticate" (authenticate config (rest (:arguments options)))
     "products" (products config (rest (:arguments options)))
 
-    "lamp-toggle" (lamp-toggle config)
+    "lamp-toggle" (lamp-toggle config (rest (:arguments options)))
     "lamp-on" (set-lamp-status config true)
     "lamp-off" (set-lamp-status config false)
 
