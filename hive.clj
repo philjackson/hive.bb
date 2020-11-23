@@ -28,7 +28,6 @@
 (declare hive-post)
 
 (defn hive-refresh-token [config]
-  (println "Refreshing token.")
   (hive-post config
              (str beekeeper-base "/1.0/cognito/refresh-token")
              {:body (json/generate-string config)}))
@@ -50,6 +49,7 @@
         (-> (hive-refresh-token config)
             extract-config
             write-config)
+        ;; make the call again
         (hive-call method config url (assoc options :no-refresh? true)))
 
       (and (>= status 200) (< status 300))
